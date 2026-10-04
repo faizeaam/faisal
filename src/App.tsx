@@ -149,47 +149,6 @@ function App() {
     setNotice({ kind: 'success', text: 'Owner access granted.' })
   }
 
-  const requestSecureLink = async (event: FormEvent<HTMLFormElement>, expectedOwnerEmail?: string) => {
-    event.preventDefault()
-    if (!supabase) return
-    const trimmedEmail = email.trim()
-    if (!trimmedEmail) {
-      setNotice({ kind: 'error', text: 'Please enter your email address first.' })
-      return
-    }
-    if (expectedOwnerEmail && trimmedEmail.toLowerCase() !== expectedOwnerEmail.toLowerCase()) {
-      setNotice({ kind: 'error', text: `Use the exact owner email: ${expectedOwnerEmail}` })
-      return
-    }
-    const now = Date.now()
-    if (otpCooldownUntil && now < otpCooldownUntil) {
-      const remainingSeconds = Math.max(1, Math.ceil((otpCooldownUntil - now) / 1000))
-      setNotice({ kind: 'info', text: `Please wait ${remainingSeconds}s before requesting another sign-in link.` })
-      return
-    }
-
-    setWorking(true)
-    setNotice(null)
-    setOtpCooldownUntil(now + 60_000)
-
-    const { error } = await supabase.auth.signInWithOtp({
-      email: trimmedEmail,
-      options: { emailRedirectTo: window.location.origin },
-    })
-    setWorking(false)
-
-    if (error) {
-      const message = error.message.toLowerCase()
-      const friendlyMessage = message.includes('rate limit') || message.includes('too many requests')
-        ? 'Too many sign-in requests for this email. Wait a minute and try again.'
-        : error.message
-      setNotice({ kind: 'error', text: friendlyMessage })
-      return
-    }
-
-    setNotice({ kind: 'success', text: 'Secure sign-in link sent. Open it from your email to continue.' })
-  }
-
   const handleOwnerAccess = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!supabase) return
