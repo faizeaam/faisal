@@ -18,7 +18,7 @@ on conflict (id) do nothing;
 
 create table if not exists public.appointments (
   id uuid primary key default gen_random_uuid(),
-  customer_id uuid not null references auth.users(id) on delete cascade,
+  customer_id uuid references auth.users(id) on delete cascade,
   customer_email text not null,
   customer_name text not null check (length(trim(customer_name)) between 1 and 100),
   customer_phone text not null check (length(trim(customer_phone)) between 1 and 40),
@@ -42,7 +42,24 @@ alter table public.appointments enable row level security;
 
 revoke all on public.app_settings from anon, authenticated;
 revoke all on public.appointments from anon;
-grant select, insert, update on public.appointments to authenticated;
+grant select on public.app_settings to anon, authenticated;
+grant insert on public.appointments to anon, authenticated;
+grant select, update on public.appointments to authenticated;
+
+create policy "Allow app settings read for owner checks"
+on public.app_settings for select to anon, authenticated
+using (true);
+
+create policy "Anyone can request an appointment"
+on public.appointments for insert to anon, authenticated
+with check (
+  status = 'pending'
+  and length(trim(customer_email)) > 0
+  and length(trim(customer_name)) > 0
+  and length(trim(customer_phone)) > 0
+  and starts_at is not null
+  and (customer_id is null or customer_id = auth.uid())
+);
 
 create or replace function public.is_owner()
 returns boolean

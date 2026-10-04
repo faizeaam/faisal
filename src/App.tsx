@@ -47,6 +47,8 @@ const displayAppointmentDate = (appointment: Appointment) =>
     timeZone: appointment.timezone,
   }).format(new Date(appointment.starts_at))
 
+const APP_VERSION = 'v2.1.0-owner-fix'
+
 function App() {
   const [calendarBounds] = useState(() => {
     const today = new Date()
@@ -239,12 +241,23 @@ function App() {
 
   const createAppointment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!supabase || !session?.user.email || !selectedSlot) return
+    if (!supabase || !selectedSlot) return
+
+    const emailToUse = (session?.user.email ?? email).trim()
+    if (!emailToUse) {
+      setNotice({ kind: 'error', text: 'Please enter your email address before requesting an appointment.' })
+      return
+    }
+    if (!customerName.trim() || !customerPhone.trim()) {
+      setNotice({ kind: 'error', text: 'Please add your name and phone number before booking.' })
+      return
+    }
+
     setWorking(true)
     setNotice(null)
     const { error } = await supabase.from('appointments').insert({
-      customer_id: session.user.id,
-      customer_email: session.user.email,
+      customer_id: session?.user.id ?? null,
+      customer_email: emailToUse,
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
       starts_at: selectedSlot.slot_start,
@@ -295,6 +308,7 @@ function App() {
   return (
     <div className="site-shell">
       <header className="topbar">
+        <div style={{ position: 'absolute', left: '-9999px', fontSize: '1px', color: 'transparent' }}>{APP_VERSION}</div>
         <a className="brand" href="#home" onClick={() => setActiveView('book')} aria-label="Faisal appointments home">
           <span className="brand-mark"><CalendarDays size={19} strokeWidth={2.1} /></span>
           <span className="brand-copy"><strong>Faisal</strong><small>PRIVATE APPOINTMENTS</small></span>
@@ -380,18 +394,16 @@ function App() {
             </div>
             {!session ? <div className="verify-panel">
               <div className="verify-icon"><ShieldCheck size={23} /></div>
-              <h3>Finish with a secure sign-in</h3>
-              <p>Choose an available time, then verify your email to complete the booking. Only you and Faisal can see its details.</p>
-              {selectedSlot && <div className="field-block note-field-wrap">
-                <label htmlFor="booking-note-pre-signin">Why do you want this appointment?</label>
-                <textarea id="booking-note-pre-signin" className="text-input note-input" maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Tell Faisal what you want to discuss" rows={3} />
-              </div>}
-              <form className="email-form" onSubmit={(event) => void requestSecureLink(event)}>
-                <label htmlFor="booking-email">Your email address</label>
-                <input id="booking-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
-                <button className="primary-button full-button" type="submit" disabled={!supabase || !selectedSlot || working || isOtpCoolingDown}>{working ? 'Sending link...' : isOtpCoolingDown ? 'Please wait...' : 'Email me a secure link'} <ArrowRight size={17} /></button>
+              <h3>Leave your contact details</h3>
+              <p>Choose an available time and send your request. Faisal will see your email and note in the owner dashboard.</p>
+              <form className="booking-form" onSubmit={(event) => void createAppointment(event)}>
+                <div className="field-block"><label htmlFor="booking-email">Your email address</label><input id="booking-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></div>
+                <div className="field-block"><label htmlFor="customer-name">Your name</label><input className="text-input" id="customer-name" autoComplete="name" required maxLength={100} value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Name" /></div>
+                <div className="field-block"><label htmlFor="customer-phone">Phone number</label><input className="text-input" id="customer-phone" type="tel" autoComplete="tel" required maxLength={40} value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="For appointment updates" /></div>
+                <div className="field-block note-field-wrap"><label htmlFor="booking-note-pre-signin">Why do you want this appointment?</label><textarea id="booking-note-pre-signin" className="text-input note-input" maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Tell Faisal what you want to discuss" rows={3} /></div>
+                <button className="primary-button full-button" type="submit" disabled={!selectedSlot || !supabase || working}>{working ? 'Saving appointment...' : 'Request this time'} <ArrowRight size={17} /></button>
               </form>
-              <div className="secure-caption"><LockKeyhole size={13} /> No password needed. Your email is private.</div>
+              <div className="secure-caption"><LockKeyhole size={13} /> No sign-in is required. Your email stays private to Faisal.</div>
             </div> : <>
               <div className="signed-in-line"><span className="signed-in-check"><Check size={12} /></span><span>Signed in as <strong>{session.user.email}</strong></span></div>
               <form className="booking-form" onSubmit={(event) => void createAppointment(event)}>
