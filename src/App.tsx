@@ -47,7 +47,7 @@ const displayAppointmentDate = (appointment: Appointment) =>
     timeZone: appointment.timezone,
   }).format(new Date(appointment.starts_at))
 
-const APP_VERSION = 'v2.1.0-owner-fix'
+const APP_VERSION = 'v2.1.2-force-pages-refresh'
 
 function App() {
   const [calendarBounds] = useState(() => {
