@@ -71,6 +71,14 @@ function App() {
   const [activeView, setActiveView] = useState<'book' | 'appointments'>('book')
   const [notice, setNotice] = useState<Notice | null>(null)
   const [working, setWorking] = useState(false)
+  const [otpCooldownUntil, setOtpCooldownUntil] = useState<number | null>(null)
+  const [ownerEmailHint, setOwnerEmailHint] = useState<string | null>(null)
+  const [ownerSecretCodeValue, setOwnerSecretCodeValue] = useState<string | null>(null)
+  const [ownerSecretCode, setOwnerSecretCode] = useState('')
+  const [ownerOverride, setOwnerOverride] = useState(false)
+  const [bookingConfirmation, setBookingConfirmation] = useState<{ starts_at: string; note: string } | null>(null)
+
+  const isOtpCoolingDown = otpCooldownUntil !== null && Date.now() < otpCooldownUntil
 
   useEffect(() => {
     const client = supabase
@@ -119,18 +127,114 @@ function App() {
     return () => { active = false }
   }, [date])
 
-  const requestSecureLink = async (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    if (!supabase) return
+    let active = true
+    void supabase.from('app_settings').select('owner_email, owner_secret_code').eq('id', true).maybeSingle().then(({ data }) => {
+      if (!active) return
+      setOwnerEmailHint((data?.owner_email as string | undefined) ?? null)
+      setOwnerSecretCodeValue((data?.owner_secret_code as string | undefined) ?? null)
+    })
+    return () => { active = false }
+  }, [])
+
+  const grantOwnerAccess = () => {
+    setIsOwner(true)
+    setOwnerOverride(true)
+    setActiveView('appointments')
+    setOwnerDialogOpen(false)
+    setOwnerSecretCode('')
+    setNotice({ kind: 'success', text: 'Owner access granted.' })
+  }
+
+  const requestSecureLink = async (event: FormEvent<HTMLFormElement>, expectedOwnerEmail?: string) => {
     event.preventDefault()
     if (!supabase) return
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail) {
+      setNotice({ kind: 'error', text: 'Please enter your email address first.' })
+      return
+    }
+    if (expectedOwnerEmail && trimmedEmail.toLowerCase() !== expectedOwnerEmail.toLowerCase()) {
+      setNotice({ kind: 'error', text: `Use the exact owner email: ${expectedOwnerEmail}` })
+      return
+    }
+    const now = Date.now()
+    if (otpCooldownUntil && now < otpCooldownUntil) {
+      const remainingSeconds = Math.max(1, Math.ceil((otpCooldownUntil - now) / 1000))
+      setNotice({ kind: 'info', text: `Please wait ${remainingSeconds}s before requesting another sign-in link.` })
+      return
+    }
+
     setWorking(true)
     setNotice(null)
+    setOtpCooldownUntil(now + 60_000)
+
     const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(), options: { emailRedirectTo: window.location.origin },
+      email: trimmedEmail,
+      options: { emailRedirectTo: window.location.origin },
     })
     setWorking(false)
-    setNotice(error
-      ? { kind: 'error', text: error.message }
-      : { kind: 'success', text: 'Secure sign-in link sent. Open it from your email to continue.' })
+
+    if (error) {
+      const message = error.message.toLowerCase()
+      const friendlyMessage = message.includes('rate limit') || message.includes('too many requests')
+        ? 'Too many sign-in requests for this email. Wait a minute and try again.'
+        : error.message
+      setNotice({ kind: 'error', text: friendlyMessage })
+      return
+    }
+
+    setNotice({ kind: 'success', text: 'Secure sign-in link sent. Open it from your email to continue.' })
+  }
+
+  const handleOwnerAccess = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase) return
+
+    const enteredEmail = email.trim().toLowerCase()
+    const enteredCode = ownerSecretCode.trim()
+    const configuredEmail = ownerEmailHint?.trim().toLowerCase()
+    const configuredCode = ownerSecretCodeValue?.trim()
+
+    if (enteredCode && configuredCode && enteredCode === configuredCode) {
+      grantOwnerAccess()
+      return
+    }
+
+    if (enteredEmail && configuredEmail && enteredEmail === configuredEmail) {
+      const now = Date.now()
+      if (otpCooldownUntil && now < otpCooldownUntil) {
+        const remainingSeconds = Math.max(1, Math.ceil((otpCooldownUntil - now) / 1000))
+        setNotice({ kind: 'info', text: `Please wait ${remainingSeconds}s before requesting another sign-in link.` })
+        return
+      }
+
+      setWorking(true)
+      setNotice(null)
+      setOtpCooldownUntil(now + 60_000)
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email: enteredEmail,
+        options: { emailRedirectTo: window.location.origin },
+      })
+      setWorking(false)
+
+      if (error) {
+        const message = error.message.toLowerCase()
+        const friendlyMessage = message.includes('rate limit') || message.includes('too many requests')
+          ? 'Email is rate-limited right now. Use the owner secret code instead.'
+          : error.message
+        setNotice({ kind: 'error', text: friendlyMessage })
+        return
+      }
+
+      setNotice({ kind: 'success', text: 'Secure owner sign-in link sent. Open it from your email to continue.' })
+      setOwnerDialogOpen(false)
+      return
+    }
+
+    setNotice({ kind: 'error', text: 'Use the exact owner email or the configured secret code.' })
   }
 
   const createAppointment = async (event: FormEvent<HTMLFormElement>) => {
@@ -156,6 +260,7 @@ function App() {
       return
     }
     setNotice({ kind: 'success', text: 'Your appointment request is booked. Faisal can now see it in the owner dashboard.' })
+    setBookingConfirmation({ starts_at: selectedSlot.slot_start, note: note.trim() || 'No extra details added.' })
     setCustomerName('')
     setCustomerPhone('')
     setNote('')
@@ -210,7 +315,7 @@ function App() {
       </div>}
 
       <main id="home">
-        {activeView === 'appointments' && session ? <section className="appointments-view">
+        {activeView === 'appointments' && (session || ownerOverride) ? <section className="appointments-view">
           <div className="view-heading">
             <div className="eyebrow"><span className="eyebrow-dot" /> {isOwner ? 'FAISAL · OWNER VIEW' : 'YOUR PRIVATE SPACE'}</div>
             <h1>{isOwner ? 'Appointments' : 'Your appointments'}</h1>
@@ -221,12 +326,23 @@ function App() {
             <div className="appointment-list">{appointments.map((appointment) => <article className="appointment-row" key={appointment.id}>
               <div className="appointment-date-icon"><CalendarDays size={20} /></div>
               <div className="appointment-main">
-                <strong>{displayAppointmentDate(appointment)}</strong>
-                <span>{appointment.duration_minutes} minutes · {isOwner ? appointment.customer_name : 'With Faisal'}</span>
-                {isOwner && <small>{appointment.customer_email} · {appointment.customer_phone}</small>}
-                {appointment.note && isOwner && <p className="appointment-note">“{appointment.note}”</p>}
+                <div className="appointment-head">
+                  <strong>{displayAppointmentDate(appointment)}</strong>
+                  {isOwner && <span className={`status-pill status-${appointment.status}`}>{appointment.status}</span>}
+                </div>
+                <div className="appointment-meta-row">
+                  <span>{appointment.duration_minutes} minutes</span>
+                  {isOwner ? <span>Customer: {appointment.customer_name}</span> : <span>With Faisal</span>}
+                </div>
+                {isOwner && <div className="appointment-contact-row">
+                  <span>{appointment.customer_email}</span>
+                  <span>{appointment.customer_phone}</span>
+                </div>}
+                {appointment.note && isOwner && <div className="appointment-purpose">
+                  <small>Purpose</small>
+                  <p>“{appointment.note}”</p>
+                </div>}
               </div>
-              <span className={`status-pill status-${appointment.status}`}>{appointment.status}</span>
               {isOwner && appointment.status === 'pending' && <div className="row-actions">
                 <button className="confirm-button" type="button" disabled={working} onClick={() => void updateAppointmentStatus(appointment, 'confirmed')}><Check size={15} /> Confirm</button>
                 <button className="icon-action" type="button" title="Cancel appointment" aria-label="Cancel appointment" disabled={working} onClick={() => void updateAppointmentStatus(appointment, 'cancelled')}><X size={17} /></button>
@@ -266,10 +382,14 @@ function App() {
               <div className="verify-icon"><ShieldCheck size={23} /></div>
               <h3>Finish with a secure sign-in</h3>
               <p>Choose an available time, then verify your email to complete the booking. Only you and Faisal can see its details.</p>
+              {selectedSlot && <div className="field-block note-field-wrap">
+                <label htmlFor="booking-note-pre-signin">Why do you want this appointment?</label>
+                <textarea id="booking-note-pre-signin" className="text-input note-input" maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Tell Faisal what you want to discuss" rows={3} />
+              </div>}
               <form className="email-form" onSubmit={(event) => void requestSecureLink(event)}>
                 <label htmlFor="booking-email">Your email address</label>
                 <input id="booking-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
-                <button className="primary-button full-button" type="submit" disabled={!supabase || !selectedSlot || working}>{working ? 'Sending link...' : 'Email me a secure link'} <ArrowRight size={17} /></button>
+                <button className="primary-button full-button" type="submit" disabled={!supabase || !selectedSlot || working || isOtpCoolingDown}>{working ? 'Sending link...' : isOtpCoolingDown ? 'Please wait...' : 'Email me a secure link'} <ArrowRight size={17} /></button>
               </form>
               <div className="secure-caption"><LockKeyhole size={13} /> No password needed. Your email is private.</div>
             </div> : <>
@@ -294,12 +414,26 @@ function App() {
           <button className="dialog-close" type="button" aria-label="Close" onClick={() => setOwnerDialogOpen(false)}><X size={19} /></button>
           <div className="verify-icon"><LockKeyhole size={22} /></div><div className="card-kicker">PRIVATE OWNER AREA</div>
           <h2 id="owner-dialog-title">Faisal’s dashboard</h2>
-          <p>Sign in with the owner email configured for this booking site. Only that account can see all appointments.</p>
-          <form className="email-form" onSubmit={(event) => { void requestSecureLink(event); setOwnerDialogOpen(false) }}>
-            <label htmlFor="owner-email">Owner email address</label><input id="owner-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="faisal@example.com" />
-            <button className="primary-button full-button" type="submit" disabled={!supabase || working}>{working ? 'Sending link...' : 'Send owner sign-in link'} <ArrowRight size={17} /></button>
+          <p>Use the exact owner email, or enter the owner secret code if email OTP is unavailable.</p>
+          <form className="email-form" onSubmit={(event) => { void handleOwnerAccess(event) }}>
+            <label htmlFor="owner-email">Owner email address</label><input id="owner-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder={ownerEmailHint ?? 'faisal@example.com'} />
+            <label htmlFor="owner-secret">Owner secret code</label><input id="owner-secret" type="password" autoComplete="one-time-code" value={ownerSecretCode} onChange={(event) => setOwnerSecretCode(event.target.value)} placeholder="Enter secret code" />
+            <button className="primary-button full-button" type="submit" disabled={!supabase || working || isOtpCoolingDown}>{working ? 'Sending link...' : isOtpCoolingDown ? 'Please wait...' : 'Open owner dashboard'} <ArrowRight size={17} /></button>
           </form>
-          <div className="secure-caption"><LockKeyhole size={13} /> Access is checked by the database.</div>
+          <div className="secure-caption"><LockKeyhole size={13} /> Email OTP or secret code can unlock access.</div>
+        </section>
+      </div>}
+
+      {bookingConfirmation && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookingConfirmation(null) }}>
+        <section className="success-dialog" role="dialog" aria-modal="true" aria-labelledby="booking-success-title">
+          <button className="dialog-close" type="button" aria-label="Close" onClick={() => setBookingConfirmation(null)}><X size={19} /></button>
+          <div className="verify-icon"><CheckCircle2 size={22} /></div>
+          <div className="card-kicker">BOOKING REQUEST SENT</div>
+          <h2 id="booking-success-title">Appointment requested</h2>
+          <p><strong>{new Intl.DateTimeFormat('en', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(bookingConfirmation.starts_at))}</strong></p>
+          <p className="confirmation-note">Purpose: {bookingConfirmation.note}</p>
+          <p>Faisal will review it and confirm or cancel it from the owner dashboard.</p>
+          <button className="primary-button full-button" type="button" onClick={() => setBookingConfirmation(null)}>Close</button>
         </section>
       </div>}
     </div>

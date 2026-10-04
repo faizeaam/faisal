@@ -87,23 +87,27 @@ main { width: 100%; flex: 1; }
 .form-divider { height: 1px; margin: 1px 0 0; background: #edf0eb; }
 .text-input { min-height: 41px; }
 .note-input { min-height: 73px; padding: 10px 12px; resize: vertical; }
+.note-field-wrap { margin-top: 18px; }
 .optional { margin-left: 4px; color: #9aa39b; font-size: 9px; font-weight: 500; }
 .private-caption { margin-top: -5px; }
 .appointments-view { width: min(900px, calc(100% - 64px)); min-height: 64vh; margin: 0 auto; padding: 69px 0 72px; }
 .view-heading h1 { margin: 18px 0 10px; font-size: 46px; }
 .view-heading > p { color: #738077; font-size: 13px; }
 .appointment-list { margin-top: 28px; border-top: 1px solid #dfe6df; }
-.appointment-row { min-height: 93px; display: grid; grid-template-columns: 43px minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 15px 4px; border-bottom: 1px solid #dfe6df; }
+.appointment-row { min-height: 93px; display: grid; grid-template-columns: 43px minmax(0, 1fr) auto; align-items: start; gap: 16px; padding: 15px 4px; border-bottom: 1px solid #dfe6df; }
 .appointment-date-icon { width: 40px; height: 40px; display: grid; place-items: center; color: #477762; background: #e8f0e9; border-radius: 50%; }
-.appointment-main { min-width: 0; display: grid; gap: 4px; }
+.appointment-main { min-width: 0; display: grid; gap: 8px; }
+.appointment-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .appointment-main strong { color: #25463a; font-size: 13px; font-weight: 700; }
-.appointment-main span, .appointment-main small { color: #7e8b81; font-size: 11px; }
-.appointment-note { margin: 2px 0 0; color: #707f75; font-size: 11px; }
+.appointment-meta-row, .appointment-contact-row { display: flex; flex-wrap: wrap; gap: 12px; color: #7e8b81; font-size: 11px; }
+.appointment-purpose { display: grid; gap: 5px; padding: 10px 11px; border: 1px solid #eeded8; border-radius: 5px; background: #fdf7f5; }
+.appointment-purpose small { color: #8d5f4f; font-size: 9px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; }
+.appointment-purpose p { margin: 0; color: #5f6d66; font-size: 11px; line-height: 1.55; }
 .status-pill { padding: 6px 9px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: capitalize; }
 .status-pending { color: #906721; background: #f8edcf; }
 .status-confirmed { color: #286047; background: #dff0e5; }
 .status-cancelled { color: #914a3c; background: #f5e4df; }
-.row-actions { display: flex; align-items: center; gap: 7px; }
+.row-actions { display: flex; align-items: center; gap: 7px; margin-top: 8px; }
 .confirm-button, .icon-action { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #dce5de; border-radius: 4px; color: #3c6852; background: #fff; font-size: 10px; font-weight: 650; cursor: pointer; }
 .confirm-button { padding: 0 9px; }
 .icon-action { width: 32px; color: #a15042; }
@@ -116,11 +120,14 @@ main { width: 100%; flex: 1; }
 .site-footer span:last-child { display: inline-flex; align-items: center; gap: 6px; }
 .site-footer svg { color: #5a806a; }
 .dialog-backdrop { position: fixed; inset: 0; z-index: 10; padding: 20px; display: grid; place-items: center; background: rgba(15, 39, 31, .44); backdrop-filter: blur(3px); }
-.owner-dialog { position: relative; width: min(100%, 390px); box-sizing: border-box; padding: 29px; background: #fff; border: 1px solid #e5e9e3; border-radius: 7px; box-shadow: 0 24px 70px rgba(16, 40, 31, .18); }
+.owner-dialog, .success-dialog { position: relative; width: min(100%, 390px); box-sizing: border-box; padding: 29px; background: #fff; border: 1px solid #e5e9e3; border-radius: 7px; box-shadow: 0 24px 70px rgba(16, 40, 31, .18); }
 .dialog-close { position: absolute; top: 13px; right: 13px; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 50%; color: #75847a; background: transparent; cursor: pointer; }
 .dialog-close:hover { background: #eff3ee; }
-.owner-dialog .verify-icon { margin-bottom: 14px; }
-.owner-dialog h2 { margin: 7px 0 8px; color: #183d35; font-family: var(--display); font-size: 25px; font-weight: 600; }
+.owner-dialog .verify-icon, .success-dialog .verify-icon { margin-bottom: 14px; }
+.owner-dialog h2, .success-dialog h2 { margin: 7px 0 8px; color: #183d35; font-family: var(--display); font-size: 25px; font-weight: 600; }
+.success-dialog p { margin: 0 0 10px; color: #5e6d64; font-size: 12px; line-height: 1.6; }
+.success-dialog strong { color: #194b3e; }
+.confirmation-note { color: #705e57; background: #f8f1ee; border: 1px solid #f1dfd9; border-radius: 5px; padding: 10px 12px; }
 @media (max-width: 860px) {
   .booking-layout { width: min(620px, calc(100% - 48px)); grid-template-columns: 1fr; gap: 30px; padding-top: 47px; }
   .intro-panel h1 { max-width: 560px; font-size: 52px; }

@@ -3,6 +3,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.app_settings (
   id boolean primary key default true check (id),
   owner_email text not null,
+  owner_secret_code text not null default 'LEE-RIM LEE-GON',
   time_zone text not null default 'Asia/Kolkata',
   slot_minutes integer not null default 30 check (slot_minutes between 15 and 180),
   opening_time time not null default '09:00',
@@ -11,8 +12,8 @@ create table if not exists public.app_settings (
   notice_hours integer not null default 2 check (notice_hours >= 0)
 );
 
-insert into public.app_settings (id, owner_email, time_zone)
-values (true, 'faizz9165326@gmail.com', 'Asia/Kolkata')
+insert into public.app_settings (id, owner_email, owner_secret_code, time_zone)
+values (true, 'faizz9165326@gmail.com', 'LEE-RIM LEE-GON', 'Asia/Kolkata')
 on conflict (id) do nothing;
 
 create table if not exists public.appointments (
