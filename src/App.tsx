@@ -74,9 +74,8 @@ function App() {
   const [notice, setNotice] = useState<Notice | null>(null)
   const [working, setWorking] = useState(false)
   const [otpCooldownUntil, setOtpCooldownUntil] = useState<number | null>(null)
-  const [ownerEmailHint, setOwnerEmailHint] = useState<string | null>(null)
-  const [ownerSecretCodeValue, setOwnerSecretCodeValue] = useState<string | null>(null)
   const [ownerSecretCode, setOwnerSecretCode] = useState('')
+  const [ownerAccessCode, setOwnerAccessCode] = useState('')
   const [ownerOverride, setOwnerOverride] = useState(false)
   const [bookingConfirmation, setBookingConfirmation] = useState<{ starts_at: string; note: string } | null>(null)
 
@@ -129,20 +128,12 @@ function App() {
     return () => { active = false }
   }, [date])
 
-  useEffect(() => {
-    if (!supabase) return
-    let active = true
-    void supabase.from('app_settings').select('owner_email, owner_secret_code').eq('id', true).maybeSingle().then(({ data }) => {
-      if (!active) return
-      setOwnerEmailHint((data?.owner_email as string | undefined) ?? null)
-      setOwnerSecretCodeValue((data?.owner_secret_code as string | undefined) ?? null)
-    })
-    return () => { active = false }
-  }, [])
-
-  const grantOwnerAccess = () => {
+  const grantOwnerAccess = (secretCode: string, ownerAppointments: Appointment[]) => {
     setIsOwner(true)
     setOwnerOverride(true)
+    setOwnerAccessCode(secretCode)
+    setAppointments(ownerAppointments)
+    setPageLoading(false)
     setActiveView('appointments')
     setOwnerDialogOpen(false)
     setOwnerSecretCode('')
@@ -155,15 +146,21 @@ function App() {
 
     const enteredEmail = email.trim().toLowerCase()
     const enteredCode = ownerSecretCode.trim()
-    const configuredEmail = ownerEmailHint?.trim().toLowerCase()
-    const configuredCode = ownerSecretCodeValue?.trim()
 
-    if (enteredCode && configuredCode && enteredCode === configuredCode) {
-      grantOwnerAccess()
+    if (enteredCode) {
+      setWorking(true)
+      setNotice(null)
+      const { data, error } = await supabase.rpc('owner_list_appointments', { p_secret_code: enteredCode })
+      setWorking(false)
+      if (!error && data) {
+        grantOwnerAccess(enteredCode, data as Appointment[])
+        return
+      }
+      setNotice({ kind: 'error', text: 'The owner secret code is incorrect, or the dashboard database setup is incomplete.' })
       return
     }
 
-    if (enteredEmail && configuredEmail && enteredEmail === configuredEmail) {
+    if (enteredEmail) {
       const now = Date.now()
       if (otpCooldownUntil && now < otpCooldownUntil) {
         const remainingSeconds = Math.max(1, Math.ceil((otpCooldownUntil - now) / 1000))
@@ -195,7 +192,7 @@ function App() {
       return
     }
 
-    setNotice({ kind: 'error', text: 'Use the exact owner email or the configured secret code.' })
+    setNotice({ kind: 'error', text: 'Enter the owner email or secret code.' })
   }
 
   const createAppointment = async (event: FormEvent<HTMLFormElement>) => {
@@ -238,16 +235,18 @@ function App() {
     setNote('')
     setSelectedSlot(null)
     setWorking(false)
-    const { data } = await supabase.from('appointments').select(
-      'id, starts_at, timezone, duration_minutes, customer_name, customer_email, customer_phone, note, status',
-    ).order('starts_at', { ascending: true })
-    setAppointments((data ?? []) as Appointment[])
   }
 
   const updateAppointmentStatus = async (appointment: Appointment, status: Appointment['status']) => {
     if (!supabase) return
     setWorking(true)
-    const { error } = await supabase.from('appointments').update({ status }).eq('id', appointment.id)
+    const { error } = ownerOverride
+      ? await supabase.rpc('owner_update_appointment_status', {
+        p_secret_code: ownerAccessCode,
+        p_appointment_id: appointment.id,
+        p_status: status,
+      })
+      : await supabase.from('appointments').update({ status }).eq('id', appointment.id)
     setWorking(false)
     if (error) {
       setNotice({ kind: 'error', text: 'That appointment could not be updated.' })
@@ -387,7 +386,7 @@ function App() {
           <h2 id="owner-dialog-title">Faisal’s dashboard</h2>
           <p>Use the exact owner email, or enter the owner secret code if email OTP is unavailable.</p>
           <form className="email-form" onSubmit={(event) => { void handleOwnerAccess(event) }}>
-            <label htmlFor="owner-email">Owner email address</label><input id="owner-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder={ownerEmailHint ?? 'faisal@example.com'} />
+            <label htmlFor="owner-email">Owner email address</label><input id="owner-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="faisal@example.com" />
             <label htmlFor="owner-secret">Owner secret code</label><input id="owner-secret" type="password" autoComplete="one-time-code" value={ownerSecretCode} onChange={(event) => setOwnerSecretCode(event.target.value)} placeholder="Enter secret code" />
             <button className="primary-button full-button" type="submit" disabled={!supabase || working || isOtpCoolingDown}>{working ? 'Sending link...' : isOtpCoolingDown ? 'Please wait...' : 'Open owner dashboard'} <ArrowRight size={17} /></button>
           </form>

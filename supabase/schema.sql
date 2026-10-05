@@ -42,13 +42,11 @@ alter table public.appointments enable row level security;
 
 revoke all on public.app_settings from anon, authenticated;
 revoke all on public.appointments from anon;
-grant select on public.app_settings to anon, authenticated;
 grant insert on public.appointments to anon, authenticated;
 grant select, update on public.appointments to authenticated;
 
-create policy "Allow app settings read for owner checks"
-on public.app_settings for select to anon, authenticated
-using (true);
+drop policy if exists "Allow app settings read for owner checks" on public.app_settings;
+drop policy if exists "Anyone can request an appointment" on public.appointments;
 
 create policy "Anyone can request an appointment"
 on public.appointments for insert to anon, authenticated
@@ -165,3 +163,78 @@ create policy "Only owner can update appointments"
   on public.appointments for update to authenticated
   using (public.is_owner())
   with check (public.is_owner());
+
+create or replace function public.owner_list_appointments(p_secret_code text)
+returns table (
+  id uuid,
+  starts_at timestamptz,
+  timezone text,
+  duration_minutes integer,
+  customer_name text,
+  customer_email text,
+  customer_phone text,
+  note text,
+  status text
+)
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not exists (
+    select 1 from public.app_settings settings
+    where settings.id = true
+      and settings.owner_secret_code = p_secret_code
+  ) then
+    raise exception 'Invalid owner secret code';
+  end if;
+
+  return query
+  select booked.id, booked.starts_at, booked.timezone, booked.duration_minutes,
+    booked.customer_name, booked.customer_email, booked.customer_phone,
+    booked.note, booked.status
+  from public.appointments booked
+  order by booked.starts_at;
+end;
+$$;
+
+revoke all on function public.owner_list_appointments(text) from public, anon, authenticated;
+grant execute on function public.owner_list_appointments(text) to anon, authenticated;
+
+create or replace function public.owner_update_appointment_status(
+  p_secret_code text,
+  p_appointment_id uuid,
+  p_status text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  updated_count integer;
+begin
+  if p_status is null or p_status not in ('confirmed', 'cancelled') then
+    raise exception 'Invalid appointment status';
+  end if;
+
+  if not exists (
+    select 1 from public.app_settings settings
+    where settings.id = true
+      and settings.owner_secret_code = p_secret_code
+  ) then
+    raise exception 'Invalid owner secret code';
+  end if;
+
+  update public.appointments
+  set status = p_status
+  where id = p_appointment_id and status = 'pending';
+
+  get diagnostics updated_count = row_count;
+  return updated_count = 1;
+end;
+$$;
+
+revoke all on function public.owner_update_appointment_status(text, uuid, text) from public, anon, authenticated;
+grant execute on function public.owner_update_appointment_status(text, uuid, text) to anon, authenticated;
